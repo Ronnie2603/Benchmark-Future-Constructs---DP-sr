@@ -1,0 +1,3 @@
+a(X) after {15 min} :- b(X).
+
+in_future_5_min(X) :- a(X) in_future [5 min].

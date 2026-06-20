@@ -1,0 +1,3 @@
+a(X) :- b(X) in [15 min], not b(X) in [14 min].
+
+in_future_5_min(X) :- b(X) in [15 min], not b(X) in [9 min].
