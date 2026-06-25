@@ -2,12 +2,14 @@
 
 This repository compares two versions of the same DP-sr benchmark:
 
-- `encodings/test_with_future_constructs.idlvsr`: encoding that uses future constructs.
-- `encodings/test_without_future_constructs.idlvsr`: equivalent encoding without future constructs.
-- `scripts/generate_logs.py`: generates deterministic input logs.
-- `scripts/generate_plots.py`: generates one PNG comparison plot for each fact count.
-- `logs/`: generated input logs used for the comparison.
-- `plots results/`: default directory for generated plot PNGs. Already containing comparison plots.
+* `encodings/test_with_future_constructs.idlvsr`: encoding that uses future constructs.
+* `encodings/test_without_future_constructs.idlvsr`: equivalent encoding without future constructs.
+* `scripts/generate_logs.py`: generates deterministic input logs.
+* `scripts/generate_plots.py`: generates one PNG comparison plot for each fact count.
+* `logs/`: generated input logs used for the comparison.
+* `plots results/`: default directory for generated plot PNGs. Already containing comparison plots.
+
+The repository also provides a pre-release DP-sr executable `.jar` that includes support for future constructs. The official DP-sr release containing this feature will be published soon. Until then, the provided pre-release `.jar` should be used to reproduce the experiments in this repository.
 
 ## Setup
 
@@ -16,6 +18,28 @@ Install the Python dependencies:
 ```bash
 python -m pip install -r requirement.txt
 ```
+
+Make sure Java 11 is installed.
+
+## DP-sr Pre-release Executable
+
+Use the provided `.jar` when running the experiments. For example:
+
+```bash
+java -jar DP-sr-v1.1.0-pre-release.jar \
+  --program=encodings/test_with_future_constructs.idlvsr \
+  --log=logs/test__500_facts.log \
+  --parallelism=1 \
+  --t-unit=min \
+  --verbose
+```
+
+where:
+* `--program` specifies the DP-sr encoding to execute.
+* `--log` specifies the input stream log.
+* `--parallelism=1` runs the benchmark with a single parallel execution unit.
+* `--t-unit=min` sets the temporal unit to minutes.
+* `--verbose` should be enabled when collecting output files for plotting.
 
 ## Generate Logs
 
@@ -51,9 +75,29 @@ Run DP-sr on the generated logs with both encoding versions:
 - `encodings/test_with_future_constructs.idlvsr`
 - `encodings/test_without_future_constructs.idlvsr`
 
-Run DP-sr with verbose output enabled, for example by using the `--verbose` option. This ensures that the output files include the per-time-point latency lines used by the plotting script, such as `TIME POINT` and `time spent1`, allowing it to produce one curve for the execution with future constructs and one curve for the execution without future constructs.
+Example execution with future constructs:
 
-Save those DP-sr output files in a directory named exactly `dp-sr_output/` with this structure:
+```bash
+java -jar dp-sr-pre-release.jar \
+  --program=encodings/test_with_future_constructs.idlvsr \
+  --log=logs/test__500_facts.log \
+  --parallelism=1 \
+  --t-unit=min \
+  --verbose
+```
+
+Example execution without future constructs:
+
+```bash
+java -jar dp-sr-pre-release.jar \
+  --program=encodings/test_without_future_constructs.idlvsr \
+  --log=logs/test__500_facts.log \
+  --parallelism=1 \
+  --t-unit=min \
+  --verbose
+```
+
+Save the DP-sr console output in a file into a directory named exactly `dp-sr_output/` with this structure:
 
 ```text
 dp-sr_output/
