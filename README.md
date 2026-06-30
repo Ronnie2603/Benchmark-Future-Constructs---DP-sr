@@ -5,9 +5,12 @@ This repository compares two versions of the same DP-sr benchmark:
 * `encodings/test_with_future_constructs.idlvsr`: encoding that uses future constructs.
 * `encodings/test_without_future_constructs.idlvsr`: equivalent encoding without future constructs.
 * `scripts/generate_logs.py`: generates deterministic input logs.
-* `scripts/generate_plots.py`: generates one PNG comparison plot for each fact count.
+* `scripts/run_10_runs.py`: runs each encoding 10 times for every input size.
+* `scripts/generate_plots.py`: averages the 10 runs and generates one comparison plot for each input size.
 * `logs/`: generated input logs used for the comparison.
 * `plots results/`: default directory for generated plot PNGs. Already containing comparison plots.
+
+The benchmark results are based on 10 runs for every combination of encoding and input size. At each timepoint, the plots compare the average latency of the 10 runs with future constructs against the average latency of the 10 runs without future constructs.
 
 The repository also provides a pre-release DP-sr executable `.jar` that includes support for future constructs. The official DP-sr release containing this feature will be published soon. Until then, the provided pre-release `.jar` should be used to reproduce the experiments in this repository.
 
@@ -58,9 +61,7 @@ logs/test__1500_facts.log
 logs/test__2000_facts.log
 ```
 
-Each file contains 30 total timepoints, one per minute, starting from
-`2020-05-26T12:00:00`. All facts are generated at timepoint 10
-(`2020-05-26T12:10:00`) and always have this form:
+Each file contains 30 total timepoints, one per minute, starting from `2020-05-26T12:00:00`. All facts are generated at timepoint 10 (`2020-05-26T12:10:00`) and always have this form:
 
 ```text
 b(1); b(2); ... b(N);
@@ -70,65 +71,51 @@ b(1); b(2); ... b(N);
 
 ## Run DP-sr
 
-Run DP-sr on the generated logs with both encoding versions:
-
-- `encodings/test_with_future_constructs.idlvsr`
-- `encodings/test_without_future_constructs.idlvsr`
-
-Example execution with future constructs:
+Run the complete benchmark with:
 
 ```bash
-java -jar dp-sr-pre-release.jar \
-  --program=encodings/test_with_future_constructs.idlvsr \
-  --log=logs/test__500_facts.log \
-  --parallelism=1 \
-  --t-unit=min \
-  --verbose
+python scripts/run_10_runs.py --n-facts=500,1000,1500,2000
 ```
 
-Example execution without future constructs:
+For every input size, `scripts/run_10_runs.py` executes both `test_with_future_constructs.idlvsr` and `test_without_future_constructs.idlvsr` 10 times, producing 20 executions per input size.
 
-```bash
-java -jar dp-sr-pre-release.jar \
-  --program=encodings/test_without_future_constructs.idlvsr \
-  --log=logs/test__500_facts.log \
-  --parallelism=1 \
-  --t-unit=min \
-  --verbose
-```
-
-Save the DP-sr console output in a file into a directory named exactly `dp-sr_output/` with this structure:
+Outputs are saved automatically with this structure:
 
 ```text
 dp-sr_output/
-  with_future_atom_output/
-    out__500_facts.txt
-    out__1000_facts.txt
-    out__1500_facts.txt
-    out__2000_facts.txt
-  without_future_atom_output/
-    out__500_facts.txt
-    out__1000_facts.txt
-    out__1500_facts.txt
-    out__2000_facts.txt
+  run_01/
+    with_future_atom_output/
+      out__500_facts.txt
+      out__1000_facts.txt
+      out__1500_facts.txt
+      out__2000_facts.txt
+    without_future_atom_output/
+      out__500_facts.txt
+      out__1000_facts.txt
+      out__1500_facts.txt
+      out__2000_facts.txt
+  run_02/
+    ...
+  ...
+  run_10/
+    ...
 ```
 
-The number in each file name must match at least one of the values passed to `--n-facts`.
+The script uses the provided pre-release JAR, the files in `logs/`, parallelism `1`, and `min` as the time unit.
 
 ## Generate Plots
 
 Generate the plots with:
 
 ```bash
-python scripts/generate_plots.py --n-facts=500,1000,1500,2000 --input-path .
+python scripts/generate_plots.py --n-facts=500,1000,1500,2000
 ```
 
-`--input-path` must point to the directory that contains `dp-sr_output/`.
-The script then reads:
+The script reads the `run_01` through `run_10` directories and, separately for each encoding and input size, averages the processing-time latency at every timepoint over the 10 runs:
 
 ```text
-<input-path>/dp-sr_output/with_future_atom_output/
-<input-path>/dp-sr_output/without_future_atom_output/
+dp-sr_output/run_XX/with_future_atom_output/
+dp-sr_output/run_XX/without_future_atom_output/
 ```
 
 Default outputs:
@@ -138,13 +125,4 @@ plots results/plot__500_facts.png
 plots results/plot__1000_facts.png
 plots results/plot__1500_facts.png
 plots results/plot__2000_facts.png
-```
-
-Change the destination directory with:
-
-```bash
-python scripts/generate_plots.py \
-  --n-facts=500,1000 \
-  --input-path path/containing/dp-sr_output \
-  --output-dir path/to/plots
 ```

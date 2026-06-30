@@ -19,6 +19,8 @@ DP_SR_OUTPUT_DIR = "dp-sr_output"
 WITH_FUTURE_DIR = "with_future_atom_output"
 WITHOUT_FUTURE_DIR = "without_future_atom_output"
 
+RUN_DIR_RE = re.compile(r"run[_-]?(\d+)$", re.IGNORECASE)
+
 TIMEPOINT_RE = re.compile(
     r"TIME POINT:\s*([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2})(?::[0-9]{2})?"
 )
@@ -96,7 +98,26 @@ def find_run_file(folder: Path, n_facts: int) -> Path:
     return matches[0]
 
 
-def load_runs(input_path: Path, n_facts_values: list[int]) -> dict[int, tuple[Path, Path]]:
+def find_run_dirs(dp_sr_output_dir: Path) -> list[Path]:
+    run_dirs = sorted(
+        path
+        for path in dp_sr_output_dir.iterdir()
+        if path.is_dir()
+        and RUN_DIR_RE.match(path.name)
+        and (path / WITH_FUTURE_DIR).is_dir()
+        and (path / WITHOUT_FUTURE_DIR).is_dir()
+    )
+
+    if not run_dirs:
+        raise FileNotFoundError(
+            f"No run directories found in {dp_sr_output_dir}. "
+            f"Expected directories such as run_01, run_02, ..., run_10."
+        )
+
+    return run_dirs
+
+
+def load_runs(input_path: Path, n_facts_values: list[int]) -> dict[int, tuple[list[Path], list[Path]]]:
     dp_sr_output_dir = input_path / DP_SR_OUTPUT_DIR
 
     if not dp_sr_output_dir.is_dir():
@@ -105,21 +126,28 @@ def load_runs(input_path: Path, n_facts_values: list[int]) -> dict[int, tuple[Pa
             f"--input-path must be the directory containing {DP_SR_OUTPUT_DIR}."
         )
 
-    with_future_dir = dp_sr_output_dir / WITH_FUTURE_DIR
-    without_future_dir = dp_sr_output_dir / WITHOUT_FUTURE_DIR
-
-    if not with_future_dir.is_dir():
-        raise FileNotFoundError(f"Missing directory: {with_future_dir}")
-
-    if not without_future_dir.is_dir():
-        raise FileNotFoundError(f"Missing directory: {without_future_dir}")
-
+    run_dirs = find_run_dirs(dp_sr_output_dir)
     runs = {}
 
     for n_facts in n_facts_values:
+        with_future_files = []
+        without_future_files = []
+
+        for run_dir in run_dirs:
+            with_future_dir = run_dir / WITH_FUTURE_DIR
+            without_future_dir = run_dir / WITHOUT_FUTURE_DIR
+
+            with_future_files.append(
+                find_run_file(with_future_dir, n_facts)
+            )
+
+            without_future_files.append(
+                find_run_file(without_future_dir, n_facts)
+            )
+
         runs[n_facts] = (
-            find_run_file(with_future_dir, n_facts),
-            find_run_file(without_future_dir, n_facts),
+            with_future_files,
+            without_future_files,
         )
 
     return runs
@@ -149,22 +177,44 @@ def parse_latency_by_timepoint(path: Path, max_timepoints: int = MAX_TIMEPOINTS)
     if len(values) < max_timepoints:
         values.extend([0.0] * (max_timepoints - len(values)))
 
-    return list(range(max_timepoints)), values
+    return values
+
+
+def average_latency_by_timepoint(files: list[Path], max_timepoints: int = MAX_TIMEPOINTS):
+    sums = [0.0] * max_timepoints
+
+    for path in files:
+        values = parse_latency_by_timepoint(path, max_timepoints)
+
+        for index, value in enumerate(values):
+            sums[index] += value
+
+    averages = [
+        value / len(files)
+        for value in sums
+    ]
+
+    return list(range(max_timepoints)), averages
 
 
 def format_axis(ax, max_timepoints: int = MAX_TIMEPOINTS):
     ax.set_xlim(0, max_timepoints - 1)
     ax.set_xticks(range(max_timepoints))
     ax.set_xlabel("timepoint", fontsize=AXIS_LABEL_SIZE)
-    ax.set_ylabel("Processing-Time Latency (s)", fontsize=AXIS_LABEL_SIZE)
+    ax.set_ylabel("Average Processing-Time Latency (s)", fontsize=AXIS_LABEL_SIZE)
     ax.tick_params(axis="both", labelsize=TICK_LABEL_SIZE)
     ax.grid(True, alpha=0.25)
     ax.legend(fontsize=LEGEND_SIZE)
 
 
-def add_comparison_plot(ax, n_facts: int, with_future_file: Path, without_future_file: Path):
-    x_with, y_with = parse_latency_by_timepoint(with_future_file)
-    x_without, y_without = parse_latency_by_timepoint(without_future_file)
+def add_comparison_plot(
+    ax,
+    n_facts: int,
+    with_future_files: list[Path],
+    without_future_files: list[Path],
+):
+    x_with, y_with = average_latency_by_timepoint(with_future_files)
+    x_without, y_without = average_latency_by_timepoint(without_future_files)
 
     ax.plot(
         x_with,
@@ -192,11 +242,23 @@ def add_comparison_plot(ax, n_facts: int, with_future_file: Path, without_future
     format_axis(ax)
 
 
-def plot_one(n_facts: int, with_future_file: Path, without_future_file: Path, output_dir: Path):
+def plot_one(
+    n_facts: int,
+    with_future_files: list[Path],
+    without_future_files: list[Path],
+    output_dir: Path,
+):
     import matplotlib.pyplot as plt
 
     fig, ax = plt.subplots(figsize=(11.5, 5.5))
-    add_comparison_plot(ax, n_facts, with_future_file, without_future_file)
+
+    add_comparison_plot(
+        ax,
+        n_facts,
+        with_future_files,
+        without_future_files,
+    )
+
     fig.tight_layout(pad=1.2)
 
     output_path = output_dir / f"plot__{n_facts}_facts.png"
@@ -209,41 +271,39 @@ def plot_one(n_facts: int, with_future_file: Path, without_future_file: Path, ou
 def main():
     parser = argparse.ArgumentParser(
         description=(
-            "Generate latency plots comparing executions with and without "
+            "Generate average latency plots comparing executions with and without "
             "future constructs."
-        ),
-        add_help=False,
+        )
     )
+
     parser.add_argument(
         "--n-facts",
         required=True,
         type=parse_n_facts,
         help="Comma-separated fact counts, e.g. --n-facts=500,1000,1500,2000.",
     )
-    parser.add_argument(
-        "--input-path",
-        required=True,
-        type=Path,
-        help=(
-            "Directory containing dp-sr_output."
-        ),
-    )
-    parser.add_argument(
-        "--output-dir",
-        type=Path,
-        default=DEFAULT_OUTPUT_DIR,
-        help="Directory where plots will be generated.",
-    )
 
     args = parser.parse_args()
-    args.output_dir.mkdir(parents=True, exist_ok=True)
 
-    runs = load_runs(args.input_path, args.n_facts)
+    DEFAULT_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    runs = load_runs(REPO_DIR, args.n_facts)
     generated = []
 
-    for n_facts, (with_future_file, without_future_file) in runs.items():
+    for n_facts, (with_future_files, without_future_files) in runs.items():
+        print(
+            f"{n_facts} facts: averaging "
+            f"{len(with_future_files)} runs with future constructs and "
+            f"{len(without_future_files)} runs without future constructs"
+        )
+
         generated.append(
-            plot_one(n_facts, with_future_file, without_future_file, args.output_dir)
+            plot_one(
+                n_facts,
+                with_future_files,
+                without_future_files,
+                DEFAULT_OUTPUT_DIR,
+            )
         )
 
     print("Generated plots:")
